@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Invoice Penjualan - PT Henjaya Putra</title>
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; margin: 0; background: #f5f5f5; }
+    .invoice-area { max-width: 800px; margin: auto; border: 1px solid #ccc; padding: 20px; background: #fff; }
+    .hidden-print { display: block; }
+    .no-print { display: none !important; }
+    @media print {
+      .hidden-print { display: none !important; }
+    }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: left; }
+    .right { text-align: right; }
+    .footer { margin-top: 40px; display: flex; justify-content: space-between; flex-wrap: wrap; }
+    .footer div { width: 48%; }
+    #invoice-list { margin-top: 40px; }
+    button { margin: 5px; padding: 10px; }
+    input, textarea { width: 100%; padding: 5px; margin-top: 5px; margin-bottom: 10px; }
+    @media (max-width: 600px) {
+      .footer { flex-direction: column; }
+      .footer div { width: 100%; margin-bottom: 20px; }
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+</head>
+<body>
+  <div class="invoice-area" id="invoice">
+    <div style="text-align: center">
+      <img src="logo.jpg" alt="Logo" height="80"><br>
+      <h2>PT Henjaya Putra</h2>
+      <p>Blok Calingcing, RT.011/RW.006, Sukasari Kidul,<br>Kec. Argapura, Kabupaten Majalengka, Jawa Barat 45462</p>
+    </div>
+
+    <div class="hidden-print">
+      <label>Tanggal: <input type="date" id="tanggal"></label>
+      <label>Perusahaan Pembeli: <input type="text" id="pembeli"></label>
+    </div>
+
+    <div id="info-invoice">
+      <p><strong>Tanggal:</strong> <span id="invoice-tanggal"></span></p>
+      <p><strong>Perusahaan Pembeli:</strong> <span id="invoice-pembeli"></span></p>
+    </div>
+
+    <div class="hidden-print">
+      <label>Deskripsi: <textarea id="deskripsi"></textarea></label>
+      <label>Jumlah (Kg): <input type="number" id="jumlah"></label>
+      <label>Harga per Kg (Rp): <input type="number" id="harga"></label>
+      <button onclick="tambahItem()">Simpan Invoice</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Deskripsi</th>
+          <th>Jumlah (Kg)</th>
+          <th>Harga per Kg</th>
+          <th>Total</th>
+          <th class="hidden-print">Aksi</th>
+        </tr>
+      </thead>
+      <tbody id="tabel-item"></tbody>
+    </table>
+
+    <div>
+      <p class="right">Subtotal: Rp <span id="subtotal">0</span></p>
+      <div style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+        <label>Pajak (%): <input type="number" id="pajak" oninput="hitungTotal()" style="width: 60px;"></label>
+      </div>
+      <p class="right">Total: Rp <span id="total">0</span></p>
+    </div>
+
+    <p><strong>Pembayaran:</strong></p>
+    <p>Rekening BCA (7751342041 a.n Hendri Kuswanto)</p>
+
+    <div class="footer">
+  <div><strong>Terimakasih</strong></div>
+  <div style="text-align: center">
+    <div class="hidden-print">
+      <label>Status Pembayaran: 
+        <select id="statusPembayaran" onchange="ubahStatusPembayaran()">
+    	  <option value="Lunas">Lunas</option>
+    	  <option value="Tempo 7 Hari">Tempo 7 Hari</option>
+    	  <option value="Tempo 14 Hari">Tempo 14 Hari</option>
+ 	</select>
+      </label>
+    </div>
+    <p id="tampilan-status" style="font-weight: bold;">ubahStatusPembayaran</p>
+    <p>Mengetahui,</p>
+    <img src="tanda_tangan.png" alt="Tanda Tangan" style="max-width: 150px; display: block; margin: 10px auto;">
+    <p><strong>Hendri Kuswanto</strong></p>
+  </div>
+</div>
+
+  <div class="hidden-print">
+    <button onclick="window.print()">Cetak Invoice</button>
+    <button id="download-btn" type="button">Unduh PDF</button>
+    <h3>Riwayat Invoice</h3>
+    <ul id="invoice-list"></ul>
+  </div>
+
+  <script>
+    let items = JSON.parse(localStorage.getItem('invoiceItems')) || [];
+    let list = JSON.parse(localStorage.getItem('invoiceList')) || [];
+    let currentInvoiceIndex = null;
+
+    function renderItems() {
+      const tbody = document.getElementById("tabel-item");
+      tbody.innerHTML = "";
+      items.forEach((item, index) => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${item.deskripsi}</td>
+            <td>${item.jumlah}</td>
+            <td>Rp ${item.harga.toLocaleString()}</td>
+            <td>Rp ${item.total.toLocaleString()}</td>
+            <td class='hidden-print'><button onclick="hapusItem(${index})">Hapus</button></td>
+          </tr>`;
+      });
+      hitungTotal();
+    }
+
+    function tambahItem() {
+      const deskripsi = document.getElementById("deskripsi").value;
+      const jumlah = parseFloat(document.getElementById("jumlah").value);
+      const harga = parseFloat(document.getElementById("harga").value);
+      const pembeli = document.getElementById("pembeli").value;
+      const tanggal = document.getElementById("tanggal").value;
+
+      if (!deskripsi || !jumlah || !harga || !pembeli || !tanggal) return alert("Lengkapi semua kolom!");
+
+      const total = jumlah * harga;
+      items.push({ deskripsi, jumlah, harga, total });
+      localStorage.setItem("invoiceItems", JSON.stringify(items));
+      renderItems();
+
+      const id = Date.now();
+      if (currentInvoiceIndex === null) {
+        list.push({ id, pembeli, tanggal });
+      } else {
+        list[currentInvoiceIndex] = { id, pembeli, tanggal };
+        currentInvoiceIndex = null;
+      }
+      localStorage.setItem("invoiceList", JSON.stringify(list));
+      renderInvoiceList();
+
+      document.getElementById("invoice-tanggal").innerText = tanggal;
+      document.getElementById("invoice-pembeli").innerText = pembeli;
+
+      // Bersihkan input item
+      document.getElementById("deskripsi").value = "";
+      document.getElementById("jumlah").value = "";
+      document.getElementById("harga").value = "";
+    }
+
+    function hapusItem(i) {
+      items.splice(i, 1);
+      localStorage.setItem("invoiceItems", JSON.stringify(items));
+      renderItems();
+    }
+
+    function hitungTotal() {
+      const subtotal = items.reduce((a, b) => a + b.total, 0);
+      document.getElementById("subtotal").innerText = subtotal.toLocaleString();
+      const pajakPersen = parseFloat(document.getElementById("pajak").value) || 0;
+      const pajak = subtotal * (pajakPersen / 100);
+      const total = subtotal + pajak;
+      document.getElementById("total").innerText = total.toLocaleString();
+    }
+
+    function renderInvoiceList() {
+      const ul = document.getElementById("invoice-list");
+      ul.innerHTML = "";
+      list.forEach((inv, i) => {
+        ul.innerHTML += `
+          <li>
+            ${inv.tanggal} - ${inv.pembeli} 
+            <button onclick="editInvoice(${i})">Edit</button>
+            <button onclick="hapusInvoice(${i})">Hapus</button>
+          </li>`;
+      });
+    }
+
+    function editInvoice(i) {
+      const inv = list[i];
+      currentInvoiceIndex = i;
+      document.getElementById("tanggal").value = inv.tanggal;
+      document.getElementById("pembeli").value = inv.pembeli;
+      document.getElementById("invoice-tanggal").innerText = inv.tanggal;
+      document.getElementById("invoice-pembeli").innerText = inv.pembeli;
+    }
+
+    function hapusInvoice(i) {
+      list.splice(i, 1);
+      localStorage.setItem("invoiceList", JSON.stringify(list));
+      renderInvoiceList();
+    }
+    function downloadPDF() {
+      const element = document.getElementById("invoice");
+      const options = {
+        filename: 'Invoice-PT-Henjaya-Putra.pdf',
+        html2canvas: { scale: 2 },
+        jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+      };
+      html2pdf().from(element).set(options).save();
+    }
+    function ubahStatusPembayaran() {
+        const status = document.getElementById("statusPembayaran").value;
+        document.getElementById("tampilan-status").innerText = status;
+    }
+    document.getElementById("download-btn").addEventListener("click", downloadPDF);
+    renderItems();
+    renderInvoiceList();
+  </script>
+</body>
+</html>
